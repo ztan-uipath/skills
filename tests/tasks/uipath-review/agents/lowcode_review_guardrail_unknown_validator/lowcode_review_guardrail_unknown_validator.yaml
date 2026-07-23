@@ -6,8 +6,8 @@ description: >
   run the review CLI (Step 2.5a), which fetches the live catalog
   (`uip agent guardrails list`) and emits `GUARDRAIL_UNKNOWN_VALIDATOR`
   (guardrails category), then carry it into the report. Exercises the
-  catalog-backed built-in format path; needs the authed CLI (the smoke runner
-  passes UIPATH_CLI_* auth).
+  catalog-backed built-in format path; needs the authenticated Alpha CLI context
+  mounted by the smoke runner.
 tags: [uipath-review, smoke, mode:diagnose, lifecycle:discover, guardrail]
 
 run_limits:
@@ -16,7 +16,6 @@ run_limits:
   max_turns: 40
 
 sandbox:
-  driver: tempdir
   python: {}
 
 pre_run:

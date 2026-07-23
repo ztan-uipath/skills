@@ -1,7 +1,7 @@
 ---
 name: uipath-review
-description: "UiPath read-only reviewer — audit structure, quality, best practices for RPA (.xaml/.cs), agents (.py/agent.json), flows (.flow), BPMN (.bpmn), coded apps, solutions (.uipx). Does NOT edit files. For building/editing→domain skills."
-allowed-tools: Bash, Read, Glob, Grep, WebFetch, AskUserQuestion
+description: "UiPath read-only reviewer for existing automations — review, audit, assess, evaluate, inspect, sanity-check, or explain and judge RPA (.xaml/.cs), agents (.py/agent.json), flows (.flow), BPMN (.bpmn), coded apps, solutions (.uipx), or mixed repositories. Covers production or deploy readiness; quality, health, maintainability, naming conventions, dead or unused code; architecture, project organization, DevOps, source-control, or build hygiene; PDD, SDD, or requirements alignment; Workflow Analyzer or validation reports; and best practices. Does NOT edit reviewed project or solution files; may write only an explicitly requested external review report. For building/editing→domain skills."
+allowed-tools: Bash, Read, Write, Glob, Grep, WebFetch, AskUserQuestion
 user-invocable: true
 ---
 
@@ -20,15 +20,15 @@ Review UiPath solutions and individual artifacts for structural validity, qualit
 
 ## Critical Rules
 
-1. **NEVER modify any files.** This skill is read-only. If fixes are needed, identify them in the report and tell the user which skill to use (uipath-rpa, uipath-agents, uipath-maestro-flow, uipath-maestro-bpmn, uipath-api-workflow, uipath-coded-apps, uipath-platform, uipath-solution).
-2. **ALWAYS run validation and Workflow Analyzer before manual review.** For RPA projects, run **both** `uip rpa validate` on every entry point AND `uip rpa build "<PROJECT_DIR>"` — `validate` catches structural / analyzer issues, `build` catches compile-time issues `validate` misses (unknown member names, invalid enum values, JIT failures). Run `uip agent validate` on agents, `uip maestro flow validate` on flows, `uip maestro bpmn validate` on BPMN processes, `uip api-workflow validate` on API workflows. Report every Error, Warning, and Info result from every command. A review without both `validate` AND `build` (for RPA) is incomplete and may ship broken member references.
+1. **NEVER modify files inside a reviewed project or solution.** The sole allowed write is one review report at a path the user explicitly requested outside every reviewed root. Resolve the requested path and compare it with every reviewed root before writing. If it resolves inside a reviewed root, do not write there; return the report in chat and ask for an external path. If fixes are needed, identify them in the report and tell the user which skill to use (uipath-rpa, uipath-agents, uipath-maestro-flow, uipath-maestro-bpmn, uipath-api-workflow, uipath-coded-apps, uipath-platform, uipath-solution).
+2. **Guardrail preflight failures are terminal; this overrides this rule and every later `ALWAYS` / `MUST` instruction.** For guardrail reviews, use only an already-installed `uip` CLI/plugins and attempt each applicable review CLI, catalog, and tenant list at most once. A missing/unavailable command, `Result: Failure`, or `RetryWillNotFix` is a completed skipped phase, never a recovery trigger: record the exact command/error once, stop the remaining guardrail preflights, and finish from available source evidence. Never install/upgrade/probe alternate binaries or commands, debug auth, inspect evaluator/task/checker files, inspect CLI/plugin source or bundles, or retry. For a low-code guardrail review, do not run `uip agent validate`; follow the low-code guardrail reference and run the single review-CLI preflight instead. For other reviews, **ALWAYS run validation and Workflow Analyzer before manual review.** For RPA projects, run **both** `uip rpa validate` on every entry point AND `uip rpa build "<PROJECT_DIR>"` — `validate` catches structural / analyzer issues, `build` catches compile-time issues `validate` misses (unknown member names, invalid enum values, JIT failures). Run `uip agent validate` on non-guardrail agent reviews, `uip maestro flow validate` on flows, `uip maestro bpmn validate` on BPMN processes, and `uip api-workflow validate` on API workflows. Report every Error, Warning, and Info result from every command that ran.
 3. **ALWAYS discover and classify before reviewing.** For solutions: classify every project before reviewing any individual one. For single projects: identify the project type and find the enclosing project directory before reviewing individual files.
 4. **Report severity for every finding.** Use: **Critical** (blocks deployment), **Warning** (should fix), **Info** (improvement opportunity).
 5. **Understand business context first.** Before evaluating optimization, ask or infer what the solution is trying to accomplish. A queue-based architecture is not "better" if the use case processes 5 items/day.
 6. **Use `--output json`** on all CLI validation commands for programmatic parsing.
 7. **Do not duplicate what validation commands catch.** Reference the validation output by rule ID and message — do not manually re-describe the same issue. But DO include every validation result (Error, Warning, Info) in the report.
 8. **Cap the review at 30 minutes of analysis.** For very large solutions (10+ projects), provide a summary review with deep dives on the 3 highest-risk projects. Offer to review remaining projects if the user wants.
-9. **Run the review CLI first, then apply the judgment catalog, for every agent encountered.** First run `uip agent review` (low-code) or `uip codedagent review` (coded) with `--output json` — it returns the deterministic findings (Step 2.5a). Then load the judgment catalog: `references/agents/agents-common-rules.md` plus the format-specific file (`agents-lowcode-rules.md` or `agents-coded-rules.md`); for the agent-builder coded layout (both `agent.json` and `main.py`), load all three and run both CLI commands. Future phases add catalogs for RPA, flows, coded apps. This holds even when the skill loads mid-task: if review work already started before this skill loaded (e.g., a generic code-review pass produced findings), Step 2.5a and the guardrail Step 0 catalog fetch are still mandatory — run them, then merge the earlier findings into this skill's report format. Prior review output is never a substitute for the review CLI or the live catalog.
+9. **Attempt the already-installed review CLI once, then apply the judgment catalog, for every agent encountered.** Run `uip agent review` (low-code) or `uip codedagent review` (coded) with `--output json` once — a successful unfiltered run satisfies every category and must not be repeated with `--checks`. For the agent-builder coded layout (both `agent.json` and `main.py`), attempt both commands once. If Critical Rule 2 applies, an unavailable or skipped result completes this phase and is not a recovery trigger. Otherwise carry deterministic findings forward, then load `references/agents/agents-common-rules.md` plus the format-specific catalog (`agents-lowcode-rules.md` or `agents-coded-rules.md`). This holds when the skill loads mid-task; prior review output is not a substitute for the single preflight attempt.
 10. **Rule findings are authoritative as emitted.** Carry review-CLI findings (`Data.Issues[]`) into the report verbatim — `RuleId`, `Severity`, `Description`, `File`, `SuggestedFix` unchanged. For the judgment catalog, use its `rule_id`, `severity`, `trigger`, and `suggested_fix` verbatim. Map severity to the report's bands: `error` → Critical, `warning` → Warning, `info` → Info. `judgment` severity rows default to Warning; the agent may escalate or de-escalate with reasoning logged in the finding's `description`. Do not re-rank otherwise.
 11. **Report rules that could not be applied** (missing tooling, missing file, review CLI unavailable, `status: deferred`) in a dedicated "Rules Skipped" subsection of the report — never silently skip.
 12. **Never invent `rule_id` values.** Every `rule_id` cited in the report MUST appear verbatim in EITHER a loaded judgment-catalog file (`references/agents/agents-*-rules.md`) OR the `uip agent review` / `uip codedagent review` JSON output. `rule_id` is a stable contract identifier — consumers grep for it, dashboards aggregate by it, audits trace it. An invented identifier looks authoritative but cannot be looked up, doesn't aggregate, and produces a different name for the same observation on the next run. If you observe a real issue covered by neither source, the finding is still valid — report it as a normal Critical / Warning / Info finding **without** a `rule_id` (no `` `RULE_ID` `` backtick token in the line). **Before emitting the report, scan every cited `rule_id` and confirm it appears verbatim in a loaded catalog file or the review-CLI output; demote any that don't to `rule_id`-less findings.**
@@ -247,6 +247,28 @@ After Step 2 validation and before manual checklist review, produce rule-ID-leve
 
 #### 2.5a — Run the review CLI first (deterministic findings)
 
+##### Guardrail tool-recovery ceiling
+
+For a review that involves guardrails, this ceiling applies **before the first
+CLI command** and overrides any recovery or fallback text in the format
+reference:
+
+- Use only the CLI and plugins that are already installed. If `uip`, the
+  applicable review command, catalog, or list command is missing or
+  unavailable, or returns `RetryWillNotFix`, that is a terminal preflight
+  result.
+- Never install or upgrade the CLI or plugins; try `npm`, `npx`, `pip`, or an
+  alternate binary; retry or probe alternate command forms; use WebFetch or
+  `curl` to compensate for failed catalog/list access; inspect installed CLI
+  bundles; or reverse-engineer the command implementation.
+- Record the exact unavailable command/error once under Rules Skipped. Preserve
+  any deterministic review finding already returned. For evidence visible only
+  in source, describe the observable issue without inventing a canonical CLI
+  rule ID.
+- Return immediately to the required review phases using available source
+  evidence. Complete those phases and write the explicitly requested external
+  report; do not perform optional recovery or exploration first.
+
 Run the review command for the agent type, once, capturing JSON:
 
 | Agent type | Command |
@@ -258,6 +280,90 @@ Run the review command for the agent type, once, capturing JSON:
 The CLI runs every deterministic static check — structural/schema, placeholder cross-refs, eval counts/diversity, secret & import regex, framework symbol existence, eval-run analysis, packaging/git hygiene — and returns them in rule format. Parse `Data.Issues[]`; each issue is `{RuleId, Category, Severity, Description, File, SuggestedFix}`. Carry each into the report **verbatim** — do not re-derive, rename, or re-rank. These rule IDs are authoritative as emitted by the CLI; they are **not** listed in the skill catalog.
 
 > **Guardrail configuration is CLI-only — never eyeball it.** Whether a guardrail is well-formed (real validator, allowed scope, required/typed/legal parameters, valid custom-rule shape) is decided **only** by `uip agent review` — the `GUARDRAIL_*` and `GUARDRAIL_CUSTOM_*` rule IDs come from this command, never from reading `agent.json` by eye and never from the judgment catalog. So whenever the task involves checking / validating / diagnosing / fixing a guardrail, running the review CLI in this step is **mandatory** (use `--checks guardrails` if you only need the guardrail pass), and every `GUARDRAIL_*` finding it returns **must** appear verbatim in the report's Rule Findings — do not replace it with a hand-written description of the problem. (The judgment catalog's `LC_GUARDRAIL_*` rules are the complement: they audit only guardrails the CLI found format-valid and recommend missing ones at Info — see Step 2.5b and [`references/agents/guardrails/guardrails-review.md`](references/agents/guardrails/guardrails-review.md).)
+
+##### Guardrail routing gate
+
+Immediately after the review CLI, scan the project for these concrete risk
+cues: explicit guardrail wiring or middleware; named PII or sensitive fields;
+a project prompt or contract that explicitly requests or permits unrestricted,
+unsafe, or policy-sensitive generated content; or a sensitive tool or data
+flow. A generic free-text input, chat field, or ordinary LLM call is not by
+itself a guardrail cue. **Even if the review CLI fails**, any cue activates the
+guardrail workflow before generic manual catalog work.
+
+First read the format-specific reference:
+
+- Low-code: `references/agents/guardrails/guardrails-review.md`
+- Coded: `references/agents/guardrails/coded-guardrails-review.md`
+
+Then make the catalog cache path and tenant list the first two guardrail
+operations. Follow the selected reference's cache probe exactly: on
+`CACHE_HIT`, read the valid cache and do not fetch; on `CACHE_MISS`, run this
+catalog fetch as a standalone Bash call:
+
+```bash
+uip agent guardrails catalog --output json
+```
+
+Next run the tenant-specific list, which is never cached, as its own standalone
+Bash call:
+
+```bash
+uip agent guardrails list --output json
+```
+
+Complete that reference's Audit and Recommend modes before continuing to the
+generic judgment catalog. For a missing low-code guardrail, emit the canonical
+`LC_GUARDRAIL_RECOMMENDED` rule ID. Never invent another `LC_GUARDRAIL_*` rule
+ID. If no cue is present, continue with the normal review; this gate does not
+change unrelated reviews.
+
+##### Guardrail preflight completion boundary
+
+Run each applicable review CLI once per agent project. For a dual-layout agent
+project, run both applicable review CLIs once. Preserve a valid 30-minute
+catalog cache hit; fetch the catalog only on `CACHE_MISS`, and run the
+tenant-specific list once for the current review. Do not retry the same failed
+catalog or list command within that review.
+
+If the review, catalog, or list command is unavailable, or its result says
+`RetryWillNotFix`, record the exact command and error under Rules Skipped and
+continue with source-only evidence. Do not:
+
+- install or upgrade packages, the CLI, or CLI plugins;
+- reverse-engineer CLI source or bundles;
+- repeat the review, catalog, or list commands; or
+- experiment with unrelated SDK or package versions.
+
+These recovery detours do not make unavailable guardrail data authoritative.
+Complete the applicable source-based Audit and Recommend checks with the
+evidence that is available.
+
+**Evidence-first report checkpoint.** When a review CLI has emitted a
+deterministic guardrail finding and catalog or list returns
+`RetryWillNotFix`—or when the preinstalled review CLI is unavailable—finish the
+format reference's bounded source-only pass, then write the explicitly
+requested external report **before another tool call**. Include every returned
+CLI finding verbatim, the exact failed preflight under Rules Skipped, and any
+source-observable issue without an invented rule ID. This is the same sole
+report allowed by Critical Rule 1: remaining mandatory phases update that same
+file and never create a second report. Do not load generic catalogs or
+checklists, fetch SDK docs, run category-specific review variants, grade, or do
+optional exploration until this checkpoint exists.
+
+After the checkpoint, complete every applicable required phase with the
+evidence already available:
+
+1. Step 2 automated validation.
+2. Step 2.5 review CLI, guardrail Audit and Recommend, and applicable judgment
+   catalog.
+3. Step 3 manual quality checks.
+4. Step 4 optimization and architecture assessment.
+5. Step 4.5 letter grade.
+
+Update the checkpoint report with those phases, then return the final identical
+report in chat. Optional exploration remains out of scope after a terminal
+preflight.
 
 #### 2.5b — Apply the judgment catalog (reasoning the CLI cannot do)
 
@@ -483,7 +589,11 @@ Full rubric, agent-principle scoring, edge cases (no-PDD / CLI-unavailable / no-
 
 ### Step 5 — Produce the Review Report
 
-Output a structured report in chat (do NOT create a file):
+Output the completed structured report in chat. When the user explicitly
+supplies one report path outside every reviewed root, resolve and check the path
+first, then write the identical completed report there before responding. If the
+path is inside a reviewed root, return the report in chat and ask for an external
+path. Do not create unsolicited files.
 
 **Report rules — do not violate:**
 
@@ -652,7 +762,7 @@ This maps the letter to the verdict word only. The agent grade is `min(G_det, G_
 
 ## Anti-Patterns — What NOT to Do
 
-1. **Do not modify files.** This is a review skill, not a builder. Identify issues, recommend fixes, and tell the user which skill to use.
+1. **Do not modify reviewed project or solution files.** The sole exception is writing the identical completed report to one explicitly requested path outside every reviewed root, after resolving and checking that path and before responding. Do not create unsolicited files.
 2. **Do not review without running automated validation first.** Manual review alone misses structural issues that CLI tools catch instantly.
 3. **Do not skip solution-level discovery.** Reviewing a single project without understanding the solution context leads to wrong optimization recommendations (e.g., suggesting queues when the solution already has a dispatcher/performer pattern).
 4. **Do not report validation errors as manual findings.** Reference the validation output — do not re-describe what the CLI already reported.

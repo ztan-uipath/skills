@@ -162,6 +162,28 @@ When the fetched docs show a middleware supports TOOL scope, it requires passing
 ),
 ```
 
+### Deterministic Tool middleware — callable rule
+
+`UiPathDeterministicGuardrailMiddleware` is Tool-only. Its `rules` value is a
+list of Python callables. A PRE callable receives the tool input dictionary and
+returns a boolean: `True` means the guardrail found a violation and runs the
+configured action.
+
+```python
+*UiPathDeterministicGuardrailMiddleware(
+    name="Block forbidden tool input",
+    tools=[my_tool],
+    action=BlockAction(),
+    stage=GuardrailExecutionStage.PRE,
+    rules=[lambda tool_input: tool_input.get("message") == "CONFIDENTIAL"],
+),
+```
+
+Do not pass JSON/dict rule objects to coded deterministic guardrails. Those
+objects belong to low-code `agent.json`; coded middleware requires callable
+rules. Keep the user's style choice: use this middleware recipe only when the
+user chose middleware.
+
 ### LLM- / Agent-scoped middleware
 
 Pass `scopes=[GuardrailScope.LLM]` or `[GuardrailScope.AGENT]`. No `tools=`.
@@ -227,6 +249,28 @@ def my_tool(text: str) -> str:
     """Tool docstring."""
     ...
 ```
+
+For a deterministic Tool guardrail in decorator style, wrap the callable in
+`CustomValidator`. The PRE callable has the same input-dict signature and
+violation semantics as middleware: it receives the tool input dictionary, and
+`True` means the guardrail found a violation.
+
+```python
+@guardrail(
+    validator=CustomValidator(lambda tool_input: tool_input.get("message") == "CONFIDENTIAL"),
+    action=BlockAction(),
+    name="Block forbidden tool input",
+    stage=GuardrailExecutionStage.PRE,
+)
+@tool
+def my_tool(message: str) -> str:
+    """Send a message."""
+    ...
+```
+
+Do not pass JSON/dict rule objects to `CustomValidator`; pass a callable.
+Keep the user's style choice: use this decorator recipe only when the user
+chose decorator.
 
 ### LLM scope — decorate the LLM factory function
 
@@ -370,6 +414,37 @@ For non-LangChain frameworks, there is no published adapter yet, so the decorato
 > A smoke run that deliberately triggers a violation (e.g. feed a PII-bearing input and confirm it blocks) is the strongest verification when the environment is authenticated against the tenant.
 >
 > **For an `EscalateAction` guardrail the outcome differs:** a violating input **suspends** the run with a `CreateEscalation` interrupt — it does not block. Verify by confirming the run suspends and a review task is created, then that `uip codedagent run <ENTRYPOINT> --resume` continues after Approve / terminates after Reject. Don't expect a block/traceback.
+
+---
+
+## Deterministic Completion Boundary
+
+For `UiPathDeterministicGuardrailMiddleware` or `CustomValidator`, use this
+short structural sequence as the **terminal verification path**:
+
+1. Parse every edited Python file without importing it:
+   `python3 -c "import ast; ast.parse(open('graph.py').read())"`.
+2. `grep` for the selected deterministic class, the callable rule, its target,
+   and the requested action/configuration values.
+3. When the action references a platform resource such as an escalation app,
+   parse and inspect `bindings.json` to confirm that resource is declared.
+4. If `uip codedagent review --output json` is available, run it once. A PASS
+   completes verification; do not add another verification phase.
+
+As soon as those applicable checks pass, **stop using tools and return the
+result immediately**. The deterministic path is local and structural:
+
+- do not run `uv sync`;
+- do not install or upgrade dependencies;
+- do not import or execute the agent module;
+- do not probe runtime, auth, or environment state;
+- do not fetch the SDK documentation again;
+- do not run `git status` or `git diff` (the task directory may not be a Git
+  worktree).
+
+These prohibitions override the LangChain runtime-wiring checks above for
+deterministic guardrails. Those checks are only for ML guardrails that require
+framework adapter registration.
 
 ---
 

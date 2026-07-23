@@ -12,6 +12,15 @@ Both workflows are driven by live CLI data — the catalog for recommendation re
 
 ## Step 0 — Fetch Catalog and Available Validators (MANDATORY — do this before any analysis)
 
+Before reading `resources/` or writing `agent.json`, complete the cache-aware
+catalog workflow and tenant list below. Do not group the cache probe, catalog
+fetch, or tenant list with unrelated commands, pipes, resource discovery, or
+project authoring. On `CACHE_MISS`, run the catalog fetch shown below as its own
+standalone Bash call; then run the tenant list as its own standalone Bash call.
+These are required preflights even when the request already names an exact
+deterministic rule. Only after both finish may resource discovery or
+configuration authoring begin.
+
 ### Catalog (cacheable — 30-minute TTL)
 
 The catalog is the same for all tenants (authored metadata, rarely changes). Cache it locally for 30 minutes to avoid redundant calls.
@@ -65,6 +74,33 @@ From `agent.json`, extract:
 - **Existing guardrails array** — what is already configured? (to avoid duplicating)
 
 Also read `resources/` to list all tool names (needed for Tool-scope recommendations).
+
+### Step 2A — Exact Named-Tool Deterministic Rule
+
+Before built-in catalog candidate ranking, classify the request. An exact
+mechanical predicate — a literal word or phrase, regex, number comparison,
+boolean comparison, or always rule — on a named Tool input or output uses this
+custom deterministic recipe:
+
+1. Confirm the named Tool exists under `resources/` and read its
+   `resource.json.name`. Select exactly one Tool name.
+2. Select `$guardrailType: "custom"` with
+   `selector.scopes: ["Tool"]` and that one name in `selector.matchNames`.
+3. For a literal word or phrase, use `$ruleType: "word"`,
+   `operator: "contains"`, and preserve the exact literal text as `value`.
+   Do not substitute `matchesRegex` unless the user explicitly requests regex,
+   pattern, or case-insensitive semantics. For other predicates, use the
+   matching regex, number, boolean, or always rule from
+   [guardrails.md](guardrails.md). Include the field selector and a blocking
+   action when the request says to prevent the operation.
+4. Build the complete custom object from the schema in
+   [guardrails.md](guardrails.md). This branch does not use
+   `validatorParameters`.
+
+Broad semantic threats such as prompt injection, PII, or general content safety
+continue through built-in catalog candidate ranking below. The deterministic
+branch applies only when both the mechanical predicate and named Tool I/O are
+present.
 
 ### Step 2 — Catalog-Driven Recommendation Analysis
 

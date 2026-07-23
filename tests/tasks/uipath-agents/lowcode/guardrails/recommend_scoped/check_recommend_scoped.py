@@ -4,12 +4,15 @@
 Validates that a custom guardrail was added for the Slack tool:
   - At least 1 guardrail with $guardrailType == "custom" exists
   - It targets Tool scope with matchNames containing "Send message to channel"
-  - It has a non-empty rules array, each rule has a $ruleType discriminator
-  - It has a UUID id, a $actionType set on action
+  - It blocks violations
+  - It has a word rule whose contains value or regular expression matches
+    CONFIDENTIAL
+  - It has a UUID id
 """
 
 import json
 import os
+import re
 import sys
 import uuid
 from pathlib import Path
@@ -18,6 +21,7 @@ ROOT = Path(os.getcwd()) / "WebResearchBriefingSolution" / "WebResearchBriefingA
 AGENT = ROOT / "agent.json"
 
 TARGET_TOOL = "Send message to channel"
+FORBIDDEN_TERM = "CONFIDENTIAL"
 
 
 def load(path: Path) -> dict:
@@ -27,6 +31,25 @@ def load(path: Path) -> dict:
         return json.loads(path.read_text())
     except json.JSONDecodeError as e:
         sys.exit(f"FAIL: {path} is not valid JSON: {e}")
+
+
+def blocks_forbidden_term(rule: dict) -> bool:
+    """Return whether a word rule triggers for the forbidden term."""
+    if rule.get("$ruleType") != "word":
+        return False
+
+    operator = rule.get("operator")
+    value = rule.get("value")
+    if not isinstance(value, str) or not value:
+        return False
+    if operator == "contains":
+        return value in FORBIDDEN_TERM
+    if operator == "matchesRegex":
+        try:
+            return re.search(value, FORBIDDEN_TERM) is not None
+        except re.error:
+            return False
+    return False
 
 
 def main() -> None:
@@ -77,11 +100,14 @@ def main() -> None:
         sys.exit(f"FAIL: guardrail.id is not a valid UUID: {gid!r}")
     print(f"OK: guardrail id is a UUID: {gid}")
 
-    # action.$actionType
+    # blocking action
     action = g.get("action")
-    if not isinstance(action, dict) or not action.get("$actionType"):
-        sys.exit(f"FAIL: guardrail.action.$actionType missing. action={action!r}")
-    print(f"OK: action.$actionType = {action['$actionType']!r}")
+    if not isinstance(action, dict) or action.get("$actionType") != "block":
+        sys.exit(
+            'FAIL: guardrail.action.$actionType must be "block". '
+            f"action={action!r}"
+        )
+    print('OK: action.$actionType == "block"')
 
     # selector.scopes contains "Tool"
     scopes = (g.get("selector") or {}).get("scopes") or []
@@ -103,6 +129,15 @@ def main() -> None:
                 f"FAIL: rules[{i}] missing $ruleType discriminator. rule={rule!r}"
             )
     print(f"OK: rules array has {len(rules)} rule(s), all have $ruleType")
+
+    matching_rules = [rule for rule in rules if blocks_forbidden_term(rule)]
+    if not matching_rules:
+        sys.exit(
+            "FAIL: guardrail.rules must include a word rule whose contains "
+            "value or matchesRegex pattern can semantically match "
+            f"CONFIDENTIAL. rules={rules!r}"
+        )
+    print("OK: found word rule that blocks CONFIDENTIAL")
 
     print("OK: custom tool-scoped guardrail check passed")
 

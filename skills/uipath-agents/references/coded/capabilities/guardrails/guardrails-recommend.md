@@ -10,9 +10,23 @@ Both workflows are driven by live data — the catalog (`uip agent guardrails ca
 
 ---
 
-## Step 0 — Fetch Catalog, Available Validators, and SDK Docs (MANDATORY — do this before any analysis)
+## Step 0 — Fetch Core SDK Docs, Catalog, Available Validators, and Framework Docs
 
-> Full three-fetch mandate applies to **Recommend mode**. In **Validate mode** of an existing guardrail the SDK docs are the authoritative, sufficient source for a validator's scope/stage — `catalog` (relevance metadata) and `list` (tenant entitlement) are recommended cross-checks, not a hard prerequisite for a scope/placement fix. See [Validate Mode](#validate-mode).
+Follow this order in Recommend mode:
+
+1. Make the first external operation after loading this reference a `WebFetch`
+   of `https://uipath.github.io/uipath-python/core/guardrails/`. Do this before
+   catalog/list calls and before inspecting the project.
+2. Fetch the catalog and guardrails list below.
+3. Inspect `pyproject.toml` and the entrypoint imports to identify the framework.
+4. When inspection identifies LangChain or LangGraph, immediately `WebFetch`
+   `https://uipath.github.io/uipath-python/langchain/guardrails/` before
+   recommendation analysis.
+
+The core page provides Validator classes, entity enums, scope/stage enums, and
+Action classes for every framework. The LangChain page provides middleware
+classes, supported scopes/stages, and `uipath_langchain.guardrails` import
+paths. Use these fetched pages as the sole source of truth.
 
 ### Catalog (cacheable — 30-minute TTL)
 
@@ -55,21 +69,20 @@ Build a lookup of `{ validatorId: status }` from the `Data` array. You will use 
 
 Coded agents reference guardrails by **Python class name** (e.g. `UiPathPIIDetectionMiddleware`, `PIIDetectionValidator`), not by `validator_id`. The catalog gives you the `validator_id`; the SDK docs give you the corresponding Python classes, import paths, scope/stage enums, and entity-type enums.
 
-Identify the agent's framework first (read `pyproject.toml` and the entrypoint imports), then fetch the SDK doc pages. Today only **LangChain** has a published UiPath guardrail adapter; for any other framework, the platform SDK is the only source.
+The core page was fetched first. After the catalog and list calls, inspect
+`pyproject.toml` and the entrypoint imports. If they identify a LangChain /
+LangGraph agent (`uipath-langchain`, `from langchain...`, or
+`from langgraph...`), fetch the LangChain page from the ordered recipe above.
+Today only LangChain has a published UiPath guardrail adapter; for any other
+framework, the core platform SDK page is the only source.
 
-Always fetch the **core** page (validators, entity enums, scope/stage enums, action classes — usable on any framework):
-
-`https://uipath.github.io/uipath-python/core/guardrails/`
-
-If the agent is a **LangChain / LangGraph** agent (detected by `uipath-langchain` in `pyproject.toml` or `from langchain...` / `from langgraph...` imports), additionally fetch:
-
-`https://uipath.github.io/uipath-python/langchain/guardrails/`
-
-This is the LangChain adapter page — it documents the middleware classes, their supported scopes/stages, and the correct `uipath_langchain.guardrails` import paths. The framework adapter is needed for the `@guardrail` decorator / middleware to actually wrap the LLM / tool / agent (see [guardrails.md § Imports Pattern](guardrails.md#imports-pattern)).
+The LangChain adapter page documents middleware classes, their supported
+scopes/stages, and the correct `uipath_langchain.guardrails` import paths. The
+framework adapter is needed for the `@guardrail` decorator / middleware to
+actually wrap the LLM / tool / agent (see
+[guardrails.md § Imports Pattern](guardrails.md#imports-pattern)).
 
 If the agent uses any other framework (LlamaIndex, OpenAI Agents, plain Python, etc.) there is no published framework adapter yet — only the core page applies. The decorator/middleware mechanism cannot auto-wrap those framework objects without an adapter; you may need to invoke validators directly. Do not invent doc URLs for frameworks that do not have one.
-
-Call `WebFetch` once per page. From the core page extract Validator classes, entity-type enums, `GuardrailScope` / `GuardrailExecutionStage`, and Action classes. From the LangChain page (when applicable) extract middleware classes, supported scopes/stages, extra parameters, and the correct `uipath_langchain.guardrails` import paths.
 
 **Use the fetched content as the sole source of truth.** Never rely on memory for class names, enum members, or import paths — the SDK evolves and the docs are the only reliable mapping.
 
@@ -224,7 +237,49 @@ Report to the user:
 
 Use when the agent already has guardrails and the user asks whether they are correctly configured or appropriate.
 
-**Fetch the SDK docs first (WebFetch) — they are the authoritative source** for which Python class corresponds to which `validator_id` and which scopes/stages each class supports; a scope/placement diagnosis is grounded there. Also run the `catalog` and `list` fetches to support the Relevance (`when_not_to_use`) and entitlement checks below — recommended, but not a hard prerequisite once the SDK docs settle the scope question.
+Use the same ordered SDK recipe as Recommend mode. The first external operation
+is a `WebFetch` of
+`https://uipath.github.io/uipath-python/core/guardrails/`, before
+the catalog and list calls. Run the catalog and list as separate standalone
+Bash calls. Never chain them with `&&`: a failure in one call must not prevent
+the other call from being attempted.
+
+```bash
+uip agent guardrails catalog --output json
+```
+
+```bash
+uip agent guardrails list --output json
+```
+
+Then inspect
+`pyproject.toml` and entrypoint imports; when they identify LangChain or
+LangGraph, immediately fetch
+`https://uipath.github.io/uipath-python/langchain/guardrails/` before validating
+the existing guardrail. The SDK docs are authoritative for class, scope, and
+stage. Catalog and list remain the relevance and entitlement cross-checks.
+
+For an **existing** validator's correctness, scope, placement, or requested
+repair, an auth, registry, or network failure from catalog/list is advisory and
+non-blocking: record the failed command and error, then continue inspecting the
+project, fetching the applicable framework docs, and diagnosing/editing/
+verifying from the authoritative SDK docs. Tenant metadata can enrich relevance
+and entitlement conclusions, but it is not required to prove that existing
+Python wiring is invalid.
+
+For Recommend mode or net-new validator selection, both data sets are required:
+any failure to obtain either required data set — the catalog or guardrails list
+— must fail closed. This includes auth, registry, or network failures as well
+as an exact `GuardrailCatalogUnavailable` response. Do not select or add a new
+validator without both data sets. For exact `GuardrailCatalogUnavailable`,
+surface its authored message.
+
+The advisory exception applies only to validation of an already-present
+validator. `GuardrailCatalogUnavailable` does not block correctness, scope,
+placement, or a requested fix for an existing validator. When the SDK docs
+conclusively show that an existing validator is misplaced and the user asked
+for a fix, apply that correction even when tenant metadata is unavailable;
+report the metadata failure separately.
 
 For each existing guardrail discovered in the Python file (Step 1 from Recommend Mode):
 
@@ -275,8 +330,8 @@ python3 -c "import ast; ast.parse(open('graph.py').read())"
 
 ## Critical Rules
 
-1. **Recommend mode / net-new adds:** fetch catalog first (use cache if fresh), guardrails list second (no cache), and the two SDK doc pages via WebFetch third (no cache) — all three required before any analysis or code edit. **Validate mode of an existing guardrail:** the SDK docs are the authoritative, sufficient grounding for a scope/placement fix; still fetch catalog + list for the Relevance and entitlement checks, but they are not a hard prerequisite.
-2. **If `GuardrailCatalogUnavailable`** → surface the message and stop. Do not fall back to guessing or hardcoded recommendations.
+1. **In Recommend and Validate modes, the first external operation is the core SDK `WebFetch`.** Fetch `https://uipath.github.io/uipath-python/core/guardrails/` before catalog/list or project inspection. Then run catalog and list as separate Bash calls (never chained with `&&`), inspect the framework, and fetch `https://uipath.github.io/uipath-python/langchain/guardrails/` immediately when the project is LangChain/LangGraph. Catalog and list requirements remain mandatory for Recommend mode and provide relevance/entitlement checks in Validate mode.
+2. **For Recommend mode or net-new validator selection, any failure to obtain either required data set — the catalog or guardrails list — must fail closed.** This includes auth, registry, or network failures and exact `GuardrailCatalogUnavailable`; surface its authored message for the latter. Do not guess or hardcode a new recommendation. The advisory exception applies only to correctness, scope, placement, or a requested fix for an already-present validator in Validate mode: record the metadata failure and continue diagnosis from the SDK docs. `GuardrailCatalogUnavailable` does not block correctness, scope, placement, or a requested fix for an existing validator.
 3. **Only recommend `Available` validators**. Mention `Unauthorised` ones to the user so they can contact their administrator.
 4. **Every recommendation must cite** the catalog entry's `when_to_use` or a specific `use_cases` item that matched the agent's context. Do not recommend a guardrail without explaining why it applies.
 5. **Never recommend two validators with the same `security_category` at the same scope and stage** (e.g. `prompt_injection` + `user_prompt_attacks` at LLM PRE). De-duplicate per Step 3: drop catalog-deprecated entries, keep the best fit, mention the alternative. Derive the grouping and deprecation from the catalog's own fields — do not hardcode validator names.

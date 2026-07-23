@@ -13,6 +13,11 @@ powers the coded guardrail judgment rules in [`../agents-coded-rules.md`](../age
 This is **review only** — never write, fix, or run `uip codedagent` mutating commands. The reviewer emits
 findings; the user (or the `uipath-agents` skill) applies them.
 
+> **Terminal preflight rule — higher priority than Step 0.** `RetryWillNotFix` is a terminal preflight result.
+> If the review CLI, catalog, or list is missing, unavailable, or returns it, record the exact command/error once under Rules Skipped and preserve any deterministic CLI finding.
+> Do not install or upgrade the CLI or plugins; do not retry or probe alternate command forms; do not debug auth; do not inspect evaluator, task, or checker files; do not use WebFetch or `curl` to compensate for the failed preflight; and do not reverse-engineer CLI bundles.
+> Run only code-only wiring Audit and source-only Recommend from the entry source already read, without inventing CLI rule IDs or fetching SDK docs, then return immediately to the parent review workflow's evidence-first report checkpoint.
+
 > **Boundary with `uip codedagent review` — do not double-flag.** The review CLI owns every **deterministic**
 > coded guardrail check and emits them as rule IDs: `CODED_GUARDRAIL_WRONG_IMPORT` (LangChain agent imports
 > guardrails from `uipath.platform.guardrails` and never from `uipath_langchain.guardrails`, so the adapter never
@@ -62,10 +67,14 @@ uip agent guardrails list --output json
 
 Build a `{ validatorId: status }` lookup from the `Data` array (use only `Status == "Available"`).
 
-### SDK Docs (NEVER skipped — Python class names)
+### SDK Docs (only after successful catalog/list — Python class names)
 
-Coded agents reference guardrails by **Python class name** (`UiPathPIIDetectionMiddleware`, `PIIValidator`), not by
-`validator_id`. Fetch the SDK doc pages via `WebFetch` to map the two:
+Fetch SDK docs only when the catalog and list succeeded and a
+mapping-dependent check remains. If either preflight was terminal, skip this
+section and follow the terminal preflight rule above. Coded agents reference
+guardrails by **Python class name** (`UiPathPIIDetectionMiddleware`,
+`PIIValidator`), not by `validator_id`. Fetch the SDK doc pages via `WebFetch`
+to map the two:
 
 - `https://uipath.github.io/uipath-python/core/guardrails/` — always (validators, entity enums, `GuardrailScope` /
   `GuardrailExecutionStage`, action classes).
@@ -77,8 +86,9 @@ Build a `{ validator_id → { middleware_class, validator_class, entity_enum, al
 import_path } }` lookup by joining catalog entries with the SDK class names. Use the fetched content as the sole
 source of truth for class/enum/import names — never memory.
 
-**If `WebFetch` is unavailable or denied**, fall back in order; stop at the first source that yields the
-class/scope/enum names:
+**Only after successful catalog/list**, if `WebFetch` is unavailable or denied,
+fall back in order; stop at the first source that yields the class/scope/enum
+names:
 
 1. `curl -fsSL <URL>` via Bash (same two URLs).
 2. Read the installed SDK sources. Locate the packages

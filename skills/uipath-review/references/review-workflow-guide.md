@@ -305,7 +305,12 @@ Use when the issue is a **missed optimization** or **minor convention deviation*
 
 ## Report Format Specification
 
-The review report follows a fixed markdown structure. Produce it in chat — do NOT write it to a file.
+The review report follows a fixed markdown structure. Produce the completed
+report in chat. When the user explicitly supplies one report path outside every
+reviewed root, resolve and check the path first, then write the identical
+completed report there before responding. If the path is inside a reviewed
+root, return the report in chat and ask for an external path. Do not create
+unsolicited files.
 
 ```markdown
 ## Review Report: <Solution/Project Name>

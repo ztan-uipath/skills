@@ -11,6 +11,11 @@ Run it during a low-code agent review (SKILL.md Step 2.5b) **after** `uip agent 
 This is **review only** — never write, fix, or `uip agent validate`. The reviewer emits findings; the user
 (or the `uipath-agents` skill) applies them.
 
+> **Terminal preflight rule — higher priority than Step 0.** `RetryWillNotFix` is a terminal preflight result.
+> If the review CLI, catalog, or list is missing, unavailable, or returns it, record the exact command/error once under Rules Skipped and preserve any deterministic CLI finding.
+> Do not install or upgrade the CLI or plugins; do not retry or probe alternate command forms; do not debug auth; do not inspect evaluator, task, or checker files; do not use WebFetch or `curl` to compensate for the failed preflight; and do not reverse-engineer CLI bundles.
+> Run source-only Recommend from the already-read `agent.json`, defer catalog-dependent Audit, and return immediately to the parent review workflow's evidence-first report checkpoint without inventing CLI rule IDs.
+
 > **Boundary with `uip agent review` — do not double-flag.** The review CLI owns every FORMAT / SCHEMA /
 > SET-MEMBERSHIP guardrail check and emits them as `GUARDRAIL_*` / `GUARDRAIL_CUSTOM_*` / `LOWCODE_*GUARDRAIL*`
 > rule IDs (unknown validator, scope-not-allowed, missing/unknown/type-mismatch/value-invalid parameters,
@@ -56,10 +61,12 @@ uip agent guardrails list --output json
 
 Build a `{ validatorId: status }` lookup from the `Data` array (use only `Status == "Available"`).
 
-### If the catalog is unavailable
+### If the catalog or tenant list is unavailable
 
-If the catalog output contains `"Code": "GuardrailCatalogUnavailable"` (or the CLI is unavailable), **do not
-guess**:
+If the catalog or tenant list command is missing, returns `Result: Failure`,
+returns `RetryWillNotFix`, or reports `GuardrailCatalogUnavailable`, stop the
+remaining guardrail preflights and apply the terminal preflight rule above.
+**Do not guess**:
 
 - **Audit Mode** (`LC_GUARDRAIL_ACTION_INEFFECTIVE`, `LC_GUARDRAIL_MISAPPLIED`) depends on the catalog → record
   these rules under the report's "Rules Skipped" subsection with reason `"guardrails catalog unavailable"`
